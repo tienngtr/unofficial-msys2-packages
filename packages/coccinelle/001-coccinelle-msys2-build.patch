@@ -1,0 +1,59 @@
+--- a/bundles/Makefile.bundles
++++ b/bundles/Makefile.bundles
+@@ -26,8 +26,7 @@ all-build: all-build-targets $(OTHERS)
+ all-build-targets: \
+ 	$(addsuffix .cma,$(ARCHIVE)) \
+ 	$(SIDEPRODUCTS) \
+-	$(SIDEPRODUCTS_BYTECODE) \
+-	$(patsubst %,dll%_stubs.so,$(LIBRARY))
++	$(SIDEPRODUCTS_BYTECODE)
+ 
+ define foreach_file_to_copy_from_src
+ $(file) : $(SRC_DIR)/$(file)
+@@ -41,8 +40,7 @@ $(foreach file, \
+ 	$(addsuffix .a, $(LIBRARY)) \
+ 	$(SIDEPRODUCTS) \
+ 	$(SIDEPRODUCTS_NATIVE) \
+-	$(SIDEPRODUCTS_BYTECODE) \
+-	$(patsubst %,dll%_stubs.so,$(LIBRARY)), \
++	$(SIDEPRODUCTS_BYTECODE), \
+ 	$(eval $(foreach_file_to_copy_from_src)))
+ 
+ all.opt: depend
+@@ -53,8 +51,7 @@ all-opt-build-targets: \
+ 	$(addsuffix .cmx,$(INTERFACES)) \
+ 	$(addsuffix .a,$(LIBRARY)) \
+ 	$(SIDEPRODUCTS) \
+-	$(SIDEPRODUCTS_NATIVE) \
+-	$(patsubst %,dll%_stubs.so,$(LIBRARY))
++	$(SIDEPRODUCTS_NATIVE)
+ 
+ clean:
+ 	rm -f .depend $(ARCHIVE:=.cma) $(ARCHIVE:=.cmxa) \
+--- a/bundles/stdcompat/stdcompat-current/configure.ac
++++ b/bundles/stdcompat/stdcompat-current/configure.ac
+@@ -207,11 +207,10 @@ AM_CONDITIONAL(OCAML_SUPPORTS_BYTECODE, [test "x$OCAMLC" != "x"])
+ AM_CONDITIONAL(OCAML_SUPPORTS_NATIVE, [test "x$OCAMLOPT" != "x"])
+ 
+ AM_CONDITIONAL(OCAML_SUPPORTS_SHARED,
+-  [test `printf "$OCAMLVERSION\n3.11.1" | sort | head -n1` = 3.11.1])
++  [test `printf "$OCAMLVERSION\n3.11.1" | sort | head -n1` = 3.11.1 &&
++   test "x`ocamlc -config | sed -n 's/^supports_shared_libraries: //p'`" = xtrue])
+ 
+-AS_IF([test "x$OCAML_SUPPORTS_SHARED_TRUE" = "x"],
+-  [AC_SUBST([SHARED_LIBS], [["stdcompat.cmxs"]])],
+-  [AC_SUBST([SHARED_LIBS], [[""]])])
++AC_SUBST([SHARED_LIBS], [[""]])
+ 
+ AM_CONDITIONAL(OCAML_SUPPORTS_NO_ALIAS_DEPS,
+   [test `printf "$OCAMLVERSION\n4.02.0" | sort | head -n1` = 4.02.0])
+--- a/bundles/stdcompat/Makefile
++++ b/bundles/stdcompat/Makefile
+@@ -1,6 +1,6 @@
+ .PHONY : all
+ all :
+-	cd stdcompat-current; $(MAKE) && cp *.mli *.cmi *.cmx *.cma *.cmxa *.a *.so ..
++	cd stdcompat-current; $(MAKE) && cp *.mli *.cmi *.cmx *.cma *.cmxa *.a ..
+ 
+ .PHONY : clean
+ clean :

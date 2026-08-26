@@ -1,0 +1,10 @@
+# Local build and scratch data; generated package files are never committed.
+/build/
+/scratch/
+/packages/*/src/
+/packages/*/pkg/
+/packages/*/*.tar.*
+/packages/*/*.pkg.tar.*
+/packages/*/*.log
+/packages/*/*.sig
+

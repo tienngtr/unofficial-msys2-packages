@@ -1,0 +1,2 @@
+// CORE_SMPL_OK
+

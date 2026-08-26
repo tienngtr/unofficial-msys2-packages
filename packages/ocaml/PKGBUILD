@@ -1,0 +1,32 @@
+pkgname=ocaml
+pkgver=4.14.4
+pkgrel=1
+pkgdesc='The OCaml programming language compiler and runtime'
+arch=('x86_64')
+url='https://ocaml.org/'
+license=('LGPL2.1')
+options=('!strip')
+depends=('gcc-libs' 'zlib')
+makedepends=('gcc' 'make')
+source=("https://github.com/ocaml/ocaml/archive/refs/tags/${pkgver}.tar.gz")
+sha256sums=('71415c000ebfce604defafaa584ab5ed10ad81ff180897db4e6fea8dac6e4b0d')
+
+build() {
+  cd "${srcdir}/ocaml-${pkgver}"
+  ./configure --prefix=/usr
+  make world.opt
+}
+
+check() {
+  cd "${srcdir}/ocaml-${pkgver}"
+  ./ocamlc.opt.exe -version | grep -Fx "${pkgver}"
+  ./ocamlopt.opt.exe -version | grep -Fx "${pkgver}"
+}
+
+package() {
+  cd "${srcdir}/ocaml-${pkgver}"
+  make DESTDIR="${pkgdir}" install
+
+  install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
+  install -m644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

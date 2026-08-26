@@ -1,0 +1,53 @@
+pkgname=ocaml-findlib
+pkgver=1.9.8
+pkgrel=1
+pkgdesc='OCaml library manager'
+arch=('x86_64')
+url='https://github.com/ocaml/ocamlfind'
+license=('MIT')
+depends=('ocaml')
+makedepends=('gcc' 'make')
+source=("https://github.com/ocaml/ocamlfind/archive/refs/tags/findlib-${pkgver}.tar.gz")
+sha256sums=('d6899935ccabf67f067a9af3f3f88d94e310075d13c648fa03ff498769ce039d')
+
+build() {
+  cd "${srcdir}/ocamlfind-findlib-${pkgver}"
+  if ! ./configure \
+    -bindir /usr/bin \
+    -mandir /usr/share/man \
+    -sitelib /usr/lib/ocaml/site-lib \
+    -config /usr/lib/ocaml/findlib.conf \
+    -no-camlp4; then
+    echo 'Findlib compiler-probe log:'
+    if [[ -f ocargs.log ]]; then
+      sed -n '1,240p' ocargs.log
+    else
+      echo 'ocargs.log was not generated'
+    fi
+    echo 'Findlib compiler-probe environment:'
+    printf 'PATH=%s\n' "${PATH}"
+    printf 'CC=%s\n' "${CC-}"
+    printf 'ocamlc=%s\n' "$(command -v ocamlc || true)"
+    printf 'ocamlopt=%s\n' "$(command -v ocamlopt || true)"
+    printf 'gcc=%s\n' "$(command -v gcc || true)"
+    ocamlc -version || true
+    gcc --version | sed -n '1p' || true
+    exit 1
+  fi
+  make all opt
+}
+
+check() {
+  cd "${srcdir}/ocamlfind-findlib-${pkgver}"
+  OCAMLFIND_CONF="${PWD}/findlib.conf" \
+    OCAMLPATH="${PWD}/src" \
+    ./src/findlib/ocamlfind query findlib >/dev/null
+}
+
+package() {
+  cd "${srcdir}/ocamlfind-findlib-${pkgver}"
+  make DESTDIR="${pkgdir}" install
+
+  install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
+  install -m644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

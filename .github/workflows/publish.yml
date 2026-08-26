@@ -1,0 +1,219 @@
+name: Publish release and Pacman repository
+
+on:
+  push:
+    tags:
+      - 'coccinelle-*'
+
+permissions:
+  actions: read
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  MAKEPKG_LINT_PKGBUILD: '1'
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-ocaml:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+
+      - name: Build OCaml package
+        run: |
+          git config --global core.autocrlf input
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh ocaml build
+
+      - name: Upload OCaml package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocaml-package
+          path: build/packages/ocaml-*.pkg.tar.zst
+          if-no-files-found: error
+
+  build-findlib:
+    needs: build-ocaml
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+
+      - name: Download freshly built OCaml
+        uses: actions/download-artifact@v8
+        with:
+          name: ocaml-package
+          path: build/deps/ocaml-package
+
+      - name: Build Findlib package
+        run: |
+          git config --global core.autocrlf input
+          pacman -U --noconfirm build/deps/ocaml-package/*.pkg.tar.zst
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh ocaml-findlib build
+
+      - name: Upload Findlib package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocaml-findlib-package
+          path: build/packages/ocaml-findlib-*.pkg.tar.zst
+          if-no-files-found: error
+
+  build-publish:
+    needs: [build-ocaml, build-findlib]
+    runs-on: windows-latest
+    env:
+      GPGKEY: ${{ secrets.MSYS2_GPG_KEY_ID }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+            autoconf
+            automake
+            patch
+            pkgconf
+            python
+            python-pip
+            gnupg
+            pcre
+            pcre-devel
+
+      - name: Download freshly built dependency packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-package'
+          path: build/deps
+          merge-multiple: false
+
+      - name: Build, install, and test Coccinelle
+        run: |
+          git config --global core.autocrlf input
+          pacman -U --noconfirm build/deps/ocaml-package/*.pkg.tar.zst
+          pacman -U --noconfirm build/deps/ocaml-findlib-package/*.pkg.tar.zst
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh coccinelle build
+          pacman -U --noconfirm build/packages/coccinelle-*.pkg.tar.zst
+          bash tests/coccinelle/run-tests.sh
+
+      - name: Run Zephyr downstream guideline check
+        run: bash tests/zephyr/run-test.sh
+
+      - name: Sign package artifacts
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.MSYS2_GPG_PRIVATE_KEY }}
+          GPGKEY: ${{ secrets.MSYS2_GPG_KEY_ID }}
+        run: bash ci/sign-release.sh build/packages
+
+      - name: Create source archive and checksums
+        run: |
+          mkdir -p build/release
+          git archive --format=tar.gz \
+            --prefix="unofficial-msys2-packages-${{ github.ref_name }}/" \
+            HEAD > build/release/unofficial-msys2-packages-${{ github.ref_name }}.tar.gz
+          sha256sum build/packages/*.pkg.tar.zst \
+            build/packages/*.pkg.tar.zst.sig \
+            build/release/*.tar.gz > build/release/SHA256SUMS
+
+      - name: Generate and test Pacman repository
+        run: |
+          mkdir -p build/packages
+          cp build/deps/ocaml-package/*.pkg.tar.zst build/packages/
+          cp build/deps/ocaml-findlib-package/*.pkg.tar.zst build/packages/
+          bash ci/build-repository.sh build/packages build/repo
+          VERIFY_SIGNATURES=1 bash ci/test-repository.sh build/repo
+          VERIFY_SIGNATURES=1 bash ci/test-installed-repository.sh build/repo
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: msys2-packages
+          path: |
+            build/packages/*
+            build/release/*
+          if-no-files-found: error
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            build/packages/*.pkg.tar.zst
+            build/packages/*.pkg.tar.zst.sig
+            build/release/*.tar.gz
+            build/release/SHA256SUMS
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            Get-ChildItem -File 'build/packages/*.pkg.tar.zst'
+            Get-ChildItem -File 'build/packages/*.pkg.tar.zst.sig'
+            Get-ChildItem -File 'build/release/*'
+          ) | ForEach-Object FullName
+          gh release create "${{ github.ref_name }}" $assets `
+            --title "${{ github.ref_name }}" `
+            --generate-notes
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/repo
+
+  deploy:
+    needs: build-publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,185 @@
+name: Package CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MAKEPKG_LINT_PKGBUILD: '1'
+
+jobs:
+  build-ocaml:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out with MSYS-safe line endings
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+
+      - name: Build OCaml package
+        run: |
+          git config --global core.autocrlf input
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh ocaml build
+
+      - name: Upload OCaml package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocaml-package
+          path: build/packages/ocaml-*.pkg.tar.zst
+          if-no-files-found: error
+
+  build-findlib:
+    needs: build-ocaml
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out with MSYS-safe line endings
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+
+      - name: Download freshly built OCaml
+        uses: actions/download-artifact@v8
+        with:
+          name: ocaml-package
+          path: build/deps/ocaml-package
+
+      - name: Build Findlib package
+        run: |
+          git config --global core.autocrlf input
+          pacman -U --noconfirm build/deps/ocaml-package/*.pkg.tar.zst
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh ocaml-findlib build
+
+      - name: Upload Findlib package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ocaml-findlib-package
+          path: build/packages/ocaml-findlib-*.pkg.tar.zst
+          if-no-files-found: error
+
+  build-test-coccinelle:
+    needs: [build-ocaml, build-findlib]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out with MSYS-safe line endings
+        uses: actions/checkout@v6
+
+      - name: Set up fresh MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            gcc
+            git
+            autoconf
+            automake
+            patch
+            pkgconf
+            python
+            python-pip
+            pcre
+            pcre-devel
+
+      - name: Download freshly built dependency packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-package'
+          path: build/deps
+          merge-multiple: false
+
+      - name: Build, install, and test Coccinelle
+        run: |
+          git config --global core.autocrlf input
+          pacman -U --noconfirm build/deps/ocaml-package/*.pkg.tar.zst
+          pacman -U --noconfirm build/deps/ocaml-findlib-package/*.pkg.tar.zst
+          export MAKEFLAGS="-j$(nproc)"
+          bash ci/build-package.sh coccinelle build
+          pacman -U --noconfirm build/packages/coccinelle-*.pkg.tar.zst
+          bash tests/coccinelle/run-tests.sh
+
+      - name: Run Zephyr downstream guideline check
+        run: bash tests/zephyr/run-test.sh
+
+      - name: Upload Coccinelle package
+        uses: actions/upload-artifact@v7
+        with:
+          name: coccinelle-package
+          path: build/packages/coccinelle-*.pkg.tar.zst
+          if-no-files-found: error
+
+      - name: Generate and test Pacman repository
+        run: |
+          mkdir -p build/packages
+          cp build/deps/ocaml-package/*.pkg.tar.zst build/packages/
+          cp build/deps/ocaml-findlib-package/*.pkg.tar.zst build/packages/
+          bash ci/build-repository.sh build/packages build/repo
+          bash ci/test-repository.sh build/repo
+
+  test-repository-install:
+    needs: build-test-coccinelle
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Check out with MSYS-safe line endings
+        uses: actions/checkout@v6
+
+      - name: Set up fresh minimal MSYS2 MSYS
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            base-devel
+            git
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-package'
+          path: build/deps
+          merge-multiple: false
+
+      - name: Install from generated repository and test
+        run: |
+          git config --global core.autocrlf input
+          mkdir -p build/packages
+          cp build/deps/ocaml-package/*.pkg.tar.zst build/packages/
+          cp build/deps/ocaml-findlib-package/*.pkg.tar.zst build/packages/
+          cp build/deps/coccinelle-package/*.pkg.tar.zst build/packages/
+          bash ci/build-repository.sh build/packages build/repo
+          bash ci/test-repository.sh build/repo
+          bash ci/test-installed-repository.sh build/repo
