@@ -142,6 +142,12 @@ jobs:
       - name: Run Zephyr downstream guideline check
         run: bash tests/zephyr/run-test.sh
 
+      - name: Collect package artifacts
+        run: |
+          mkdir -p build/packages
+          cp build/deps/ocaml-package/*.pkg.tar.zst build/packages/
+          cp build/deps/ocaml-findlib-package/*.pkg.tar.zst build/packages/
+
       - name: Sign package artifacts
         env:
           GPG_PRIVATE_KEY: ${{ secrets.MSYS2_GPG_PRIVATE_KEY }}
@@ -161,8 +167,6 @@ jobs:
       - name: Generate and test Pacman repository
         run: |
           mkdir -p build/packages
-          cp build/deps/ocaml-package/*.pkg.tar.zst build/packages/
-          cp build/deps/ocaml-findlib-package/*.pkg.tar.zst build/packages/
           bash ci/build-repository.sh build/packages build/repo
           VERIFY_SIGNATURES=1 bash ci/test-repository.sh build/repo
           VERIFY_SIGNATURES=1 bash ci/test-installed-repository.sh build/repo
