@@ -34,7 +34,10 @@ build() {
     gcc --version | sed -n '1p' || true
     exit 1
   fi
-  make all opt
+  # Findlib 1.9.8 races when all and opt are built in parallel: both targets
+  # create topfind.compat.in. Keep this package-specific workaround even when
+  # the caller supplies a parallel MAKEFLAGS value.
+  make -j1 all opt
 }
 
 check() {
