@@ -27,13 +27,6 @@ package() {
   cd "${srcdir}/ocaml-${pkgver}"
   make DESTDIR="${pkgdir}" install
 
-  # MSYS2's native compiler looks up these runtime headers without the
-  # Windows .exe suffix when compiling bytecode programs.
-  for header in camlheader camlheaderd camlheaderi camlheader_ur; do
-    install -m755 "${pkgdir}/usr/lib/ocaml/${header}.exe" \
-      "${pkgdir}/usr/lib/ocaml/${header}"
-  done
-
   install -dm755 "${pkgdir}/usr/share/licenses/${pkgname}"
   install -m644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
