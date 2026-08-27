@@ -12,6 +12,12 @@ target="${repo_dir}/msys/x86_64"
 
 rm -rf "${repo_dir}"
 mkdir -p "${target}"
+if [[ -f "${script_root}/repo/index.html" ]]; then
+  cp "${script_root}/repo/index.html" "${repo_dir}/"
+fi
+if [[ -f "${script_root}/repo/msys-x86_64-index.html" ]]; then
+  cp "${script_root}/repo/msys-x86_64-index.html" "${target}/index.html"
+fi
 find "${packages_dir}" -maxdepth 1 -type f \( \
   -name '*.pkg.tar.zst' -o -name '*.pkg.tar.zst.sig' \
 \) -exec cp '{}' "${target}/" \;

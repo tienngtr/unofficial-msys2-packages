@@ -7,6 +7,13 @@ test_root="${repo_root}/.pacman-test"
 config="${test_root}/pacman.conf"
 gpg_dir="${test_root}/gnupg"
 
+for page in "${repo_root}/index.html" "${repo_root}/msys/x86_64/index.html"; do
+  if [[ ! -f "${page}" ]]; then
+    echo "missing Pages landing page: ${page}" >&2
+    exit 1
+  fi
+done
+
 rm -rf "${test_root}"
 mkdir -p "${test_root}/root" "${test_root}/db" "${test_root}/cache" "${gpg_dir}"
 chmod 700 "${gpg_dir}"
